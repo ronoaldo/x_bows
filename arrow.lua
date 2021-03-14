@@ -110,8 +110,7 @@ minetest.register_entity('x_bows:arrow_entity', {
 		self._attached = false
 		self._attached_to = {
 			type = '',
-			pos = nil,
-			ref = nil
+			pos = nil
 		}
 		self._has_particles = false
 		self._lifetimer = 60
@@ -189,19 +188,20 @@ minetest.register_entity('x_bows:arrow_entity', {
 
 		-- arrow falls down when not attached to node any more
 		if self._attached_to.type == 'node' and self._attached and self._nodechecktimer <= 0 then
-			local node = self._attached_to.ref
-
+			local node = minetest.get_node(self._attached_to.pos)
 			self._nodechecktimer = 0.5
 
+			if not node then
+				return
+			end
+
 			if node.name == 'air' then
-				local pos = self._attached_to.pos
 				self.object:set_velocity({x = 0, y = -3, z = 0})
 				self.object:set_acceleration({x = 0, y = -3, z = 0})
 				-- reset values
 				self._attached = false
 				self._attached_to.type = ''
 				self._attached_to.pos = nil
-				self._attached_to.ref = nil
 				self.object:set_properties({collisionbox = {0, 0, 0, 0, 0, 0}})
 
 				return
@@ -392,7 +392,6 @@ minetest.register_entity('x_bows:arrow_entity', {
 				self._attached = true
 				self._attached_to.type = pointed_thing.type
 				self._attached_to.pos = position
-				self._attached_to.ref = pointed_thing.ref
 
 				local children = pointed_thing.ref:get_children()
 
@@ -478,7 +477,6 @@ minetest.register_entity('x_bows:arrow_entity', {
 					self._attached = true
 					self._attached_to.type = pointed_thing.type
 					self._attached_to.pos = pointed_thing.under
-					self._attached_to.ref = node_def
 					self.object:set_properties({collisionbox = {-0.2, -0.2, -0.2, 0.2, 0.2, 0.2}})
 
 					-- remove last arrow when too many already attached
