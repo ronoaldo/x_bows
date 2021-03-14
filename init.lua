@@ -1,449 +1,357 @@
-rcbows = {}
+local mod_start_time = minetest.get_us_time()
+local bow_charged_timer = 0
 
-local S = minetest.get_translator(minetest.get_current_modname())
+x_bows = {
+	pvp = minetest.settings:get_bool('enable_pvp') or false,
+	creative = minetest.settings:get_bool('creative_mode') or false,
+	mesecons = minetest.get_modpath('mesecons'),
+	hbhunger = minetest.get_modpath('hbhunger'),
+	registered_arrows = {},
+	registered_bows = {},
+	player_bow_sneak = {}
+}
 
---CONSTANTS
-local DEFAULT_MAX_HEAR_DISTANCE = 10
-local DEFAULT_GAIN = 0.5
-
-function rcbows.spawn_arrow(user, strength, itemstack)
-	local pos = user:get_pos()
-	pos.y = pos.y + 1.5 -- camera offset
-	local dir = user:get_look_dir()
-	local yaw = user:get_look_horizontal()
-	local meta = itemstack:get_meta()
-	local arrow = meta:get_string("rcbows:charged_arrow")
-	local obj = nil
-	if pos and arrow then
-		obj = minetest.add_entity(pos, arrow)
-	end
-	if not obj then
-		return
-	end
-	local lua_ent = obj:get_luaentity()
-	lua_ent.shooter_name = user:get_player_name()
-	obj:set_yaw(yaw - 0.5 * math.pi)
-	local velocity = vector.multiply(dir, strength)
-	obj:set_velocity(velocity)
-	return true
+function x_bows.is_creative(name)
+	return x_bows.creative or minetest.check_player_privs(name, {creative = true})
 end
 
-function rcbows.launch_arrow(user, name, def, itemstack)
-	if not rcbows.spawn_arrow(user, def.strength, itemstack) then --throw arrow (spawn arrow entity)
-		return -- something failed
-	end
-	if def.sounds then
-		local user_pos = user:get_pos()
-		if not def.sounds.soundfile_fire_arrow then
-			def.sounds.soundfile_fire_arrow = "rcbows_fire_arrow"
-		end
-		rcbows.make_sound("pos", user_pos, def.sounds.soundfile_fire_arrow, DEFAULT_GAIN, DEFAULT_MAX_HEAR_DISTANCE)
-	end
-	itemstack:set_name(name)
-	itemstack:set_wear(itemstack:get_wear() + 0x10000 / def.uses)
-	if def.viewfinder then --reset the viewfinder-zoom
-		if not(user:get_fov() == 0) then
-			user:set_fov(0)
-			remove_viewfinder(user, itemstack:get_meta():get_int( "rcbows:viewfinder_id"))
-		end
-	end
-	return itemstack
-end
-
-local function show_viewfinder(player, texture)
-	local hud_id = player:hud_add({
-		hud_elem_type = "image",
-		text = texture,
-		position = {x=0, y=0},
-		scale = {x=-100, y=-100},
-		alignment = {x=1, y=1},
-		offset = {x=0, y=0}
-	})
-	return hud_id
-end
-
-function remove_viewfinder(player, hud_id)
-	if hud_id then
-		player:hud_remove(hud_id)
-	end
-end
-
-function rcbows.register_bow(name, def)
-	assert(type(def.description) == "string")
-	assert(type(def.image) == "string")
-	assert(type(def.strength) == "number")
-	assert(def.uses > 0)
-
-	local function reload_bow(itemstack, user, pointed_thing)
-		local inv = user:get_inventory()
-		local arrow, inventory_arrows, inventory_arrow, inv_arrow_name
-		local inv_list = inv:get_list("main")
-		if type(def.arrows) == 'table' then --more than one arrow?
-			for i = 1, #def.arrows do
-				arrow = def.arrows[i]
-				inv_arrow_name = minetest.registered_entities[arrow].inventory_arrow_name
-				if inv:contains_item("main", inv_arrow_name) then
-					if not inventory_arrows then
-						inventory_arrows = {}
-					end
-					inventory_arrows[#inventory_arrows+1] = {arrow = arrow, inv_arrow_name = inv_arrow_name}
-				end
-			end
-		else
-			arrow = def.arrows
-			inventory_arrow = minetest.registered_entities[def.arrows].inventory_arrow_name
-		end
-		if not inventory_arrow and not inventory_arrows then
-			return
-		end
-		if inventory_arrows then --more than one arrow?
-			for i = 1, #inv_list do
-				if inventory_arrow then
-					break
-				end
-				for j = 1, #inventory_arrows do
-					local inv_arrow = inventory_arrows[j]
-					if inv_list[i]:get_name() == inv_arrow.inv_arrow_name then
-						arrow = inv_arrow.arrow
-						inventory_arrow = inv_arrow.inv_arrow_name
-						break
-					end
-				end
-			end
-			if not inventory_arrow then
-				return
-			end
-		end
-		if not inv:remove_item("main", inventory_arrow):is_empty() then
-			minetest.after(def.charge_time or 0, function(v_user, v_name)
-				local wielded_item = v_user:get_wielded_item()
-				local wielded_item_name = wielded_item:get_name()
-				if wielded_item_name == v_name then
-					local meta = wielded_item:get_meta()
-					meta:set_string("rcbows:charged_arrow", arrow) --save the arrow in the meta
-					wielded_item:set_name(v_name .. "_charged")
-					v_user:set_wielded_item(wielded_item)
-				end
-			end, user, name)
-			if def.sounds then
-				local user_pos = user:get_pos()
-				if not def.sounds.soundfile_draw_bow then
-					def.sounds.soundfile_draw_bow = "rcbows_draw_bow"
-				end
-				rcbows.make_sound("pos", user_pos, def.sounds.soundfile_draw_bow, DEFAULT_GAIN, DEFAULT_MAX_HEAR_DISTANCE)
-			end
-			return itemstack
-		end
+function x_bows.register_bow(name, def)
+	if name == nil or name == '' then
+		return false
 	end
 
-	minetest.register_tool(name, {
-		description = def.description .. " ".. S("(place to reload)"),
-		inventory_image = def.image .. "^" .. def.overlay_empty,
+	def.name = 'x_bows:' .. name
+	def.name_charged = 'x_bows:' .. name .. '_charged'
+	def.description = def.description or name
+	def.uses = def.uses or 150
 
-		on_use = function() end,
-		on_place = reload_bow,
-		on_secondary_use = reload_bow,
+	x_bows.registered_bows[def.name_charged] = def
+
+	-- not charged bow
+	minetest.register_tool(def.name, {
+		description = def.description .. '\n' .. minetest.colorize('#00FF00', 'Critical Arrow Chance: ' .. (1 / def.crit_chance) * 100 .. '%'),
+		inventory_image = def.inventory_image or 'x_bows_bow_wood.png',
+		-- on_use = function(itemstack, user, pointed_thing)
+		-- end,
+		on_place = x_bows.load,
+		on_secondary_use = x_bows.load,
+		groups = {bow = 1, flammable = 1},
+		-- range = 0
 	})
 
+	-- charged bow
+	minetest.register_tool(def.name_charged, {
+		description = def.description .. '\n' .. minetest.colorize('#00FF00', 'Critical Arrow Chance: ' .. (1 / def.crit_chance) * 100 .. '%'),
+		inventory_image = def.inventory_image_charged or 'x_bows_bow_wood_charged.png',
+		on_use = x_bows.shoot,
+		groups = {bow = 1, flammable = 1, not_in_creative_inventory = 1},
+	})
+
+	-- recipes
 	if def.recipe then
 		minetest.register_craft({
-			output = name,
+			output = def.name,
 			recipe = def.recipe
 		})
 	end
-
-	local charged_name = name .. "_charged"
-
-	minetest.register_tool(charged_name, {
-		description = def.description .. " " .. S("(use to fire)"),
-		inventory_image = def.base_texture .. "^" ..def.overlay_charged,
-		groups = {not_in_creative_inventory=1},
-
-		on_use = function(itemstack, user, pointed_thing)
-			return rcbows.launch_arrow(user, name, def, itemstack)
-		end,
-
-		on_secondary_use = function(itemstack, user, pointed_thing) --viewfinder
-			if not def.viewfinder then
-				return
-			end
-			if user:get_fov() == 0 then
-				user:set_fov(def.viewfinder.zoom or 15)
-				if def.viewfinder.texture then
-					local viewfinder_texture = def.viewfinder.texture
-					if viewfinder_texture == "" then
-						viewfinder_texture = "rcbows_viewfinder.png"
-					end
-					itemstack:get_meta():set_int("rcbows:viewfinder_id", show_viewfinder(user, viewfinder_texture))
-				end
-			else
-				user:set_fov(0)
-				if def.viewfinder.texture then
-					remove_viewfinder(user, itemstack:get_meta():get_int( "rcbows:viewfinder_id"))
-				end
-			end
-			return itemstack
-		end
-	})
 end
 
-function rcbows.register_arrow(name, def)
-	minetest.register_entity(name, {
-		hp_max = 4,       -- possible to catch the arrow (pro skills)
-		physical = false, -- use Raycast
-		collisionbox = {-0.1, -0.1, -0.1, 0.1, 0.1, 0.1},
-		visual = "wielditem",
-		textures = {def.inventory_arrow.name},
-		visual_size = {x = 0.2, y = 0.15},
-		old_pos = nil,
-		velocity = nil,
-		liquidflag = nil,
-		shooter_name = "",
-		waiting_for_removal = false,
-		inventory_arrow_name = def.inventory_arrow.name,
-		groups = {arrow = 1},
+function x_bows.register_arrow(name, def)
+	if name == nil or name == '' then
+		return false
+	end
 
-		on_activate = function(self)
-			self.object:set_acceleration({x = 0, y = -9.81, z = 0})
-		end,
+	def.name = 'x_bows:' .. name
+	def.description = def.description or name
 
-		on_step = function(self, dtime)
-			if self.waiting_for_removal then
-				self.object:remove()
-				return
-			end
-			local pos = self.object:get_pos()
-			self.old_pos = self.old_pos or pos
-			local velocity = self.object:get_velocity()
-			if def.sounds and not(def.sounds.soundfile_hit_arrow) then
-				def.sounds.soundfile_hit_arrow = "rcbows_hit_arrow"
-			end
-			local cast = minetest.raycast(self.old_pos, pos, true, true)
-			local thing = cast:next()
-			while thing do
-				if thing.type == "object" and thing.ref ~= self.object then
-					if not thing.ref:is_player() or thing.ref:get_player_name() ~= self.shooter_name then
-						thing.ref:punch(self.object, 1.0, {
-							full_punch_interval = 0.5,
-							damage_groups = {fleshy = def.damage or 1}
-						})
-						self.waiting_for_removal = true
-						self.object:remove()
-						if def.sounds then
-							local thing_pos = thing.ref:get_pos()
-							if thing_pos then
-								rcbows.make_sound("pos", thing_pos, def.sounds.soundfile_hit_arrow, DEFAULT_GAIN, DEFAULT_MAX_HEAR_DISTANCE)
-							end
-						end
+	x_bows.registered_arrows[def.name] = def
 
-						-- no effects or not owner, nothing to do.
-						-- some effects should also happen if hitting an other object. like tnt, water etc.
-						if not def.effects or minetest.is_protected(pos, self.shooter_name) then
-							return
-						end
-
-						rcbows.boom_effect(def, pos) -- BOOM
-						rcbows.water_effect(def, pos) -- water - extinguish fires
-
-						return
-					end
-				elseif thing.type == "node" then
-					local node_name = minetest.get_node(thing.under).name
-					local drawtype = minetest.registered_nodes[node_name]["drawtype"]
-					if drawtype == 'liquid' then
-						if not self.liquidflag then
-							self.velocity = velocity
-							self.liquidflag = true
-							local liquidviscosity = minetest.registered_nodes[node_name]["liquid_viscosity"]
-							local drag = 1/(liquidviscosity*6)
-							self.object:set_velocity(vector.multiply(velocity, drag))
-							self.object:set_acceleration({x = 0, y = -1.0, z = 0})
-							rcbows.splash(self.old_pos, "rcbows_bubble.png")
-						end
-					elseif self.liquidflag then
-						self.liquidflag = false
-						if self.velocity then
-							self.object:set_velocity(self.velocity)
-						end
-						self.object:set_acceleration({x = 0, y = -9.81, z = 0})
-					end
-					if minetest.registered_items[node_name].walkable then
-						if not(def.drop) then
-							minetest.item_drop(ItemStack(def.inventory_arrow), nil, vector.round(self.old_pos))
-						else
-							if not(def.drop == "") then
-								minetest.item_drop(ItemStack(def.drop), nil, vector.round(self.old_pos))
-							end
-						end
-						self.waiting_for_removal = true
-						self.object:remove()
-
-						if def.sounds then
-							if pos then
-								rcbows.make_sound("pos", pos, def.sounds.soundfile_hit_arrow, DEFAULT_GAIN, DEFAULT_MAX_HEAR_DISTANCE)
-							end
-						end
-
-						-- no effects or not owner, nothing to do.
-						if not def.effects or minetest.is_protected(pos, self.shooter_name) then
-							return
-						end
-
-						--replace node
-						if def.effects.replace_node then
-							minetest.set_node(pos, {name = def.effects.replace_node})
-						end
-
-						rcbows.boom_effect(def, pos) -- BOOM
-						rcbows.water_effect(def, pos) -- water - extinguish fires
-
-						return
-					end
-				end
-				thing = cast:next()
-			end
-			if def.effects and def.effects.trail_particle then
-				rcbows.trail(self.old_pos, pos, def.effects.trail_particle)
-			end
-			self.old_pos = pos
-		end,
+	minetest.register_craftitem('x_bows:' .. name, {
+		description = def.description .. '\n' .. minetest.colorize('#00FF00', 'Damage: ' .. def.tool_capabilities.damage_groups.fleshy) .. '\n' .. minetest.colorize('#00BFFF', 'Charge Time: ' .. def.tool_capabilities.full_punch_interval .. 's'),
+		inventory_image = def.inventory_image,
+		groups = {arrow = 1, flammable = 1}
 	})
-	minetest.register_craftitem(def.inventory_arrow.name, {
-		description = def.inventory_arrow.description,
-		inventory_image = def.inventory_arrow.inventory_image,
-		stack_max = def.stack_max or 99,
-	})
-end
 
---SOUND SYSTEM
-
-function rcbows.make_sound(dest_type, dest, soundfile, gain, max_hear_distance)
-	if dest_type == "object" then
-		minetest.sound_play(soundfile, {object = dest, gain = gain or DEFAULT_GAIN, max_hear_distance = max_hear_distance or DEFAULT_MAX_HEAR_DISTANCE,})
-	 elseif dest_type == "player" then
-		local player_name = dest:get_player_name()
-		minetest.sound_play(soundfile, {to_player = player_name, gain = gain or DEFAULT_GAIN, max_hear_distance = max_hear_distance or DEFAULT_MAX_HEAR_DISTANCE,})
-	 elseif dest_type == "pos" then
-		minetest.sound_play(soundfile, {pos = dest, gain = gain or DEFAULT_GAIN, max_hear_distance = max_hear_distance or DEFAULT_MAX_HEAR_DISTANCE,})
+	-- recipes
+	if def.craft then
+		minetest.register_craft({
+			output = def.name ..' ' .. (def.craft_count or 4),
+			recipe = def.craft
+		})
 	end
 end
 
---ARROW EFFECTS
+function x_bows.load(itemstack, user, pointed_thing)
+	local time_load = minetest.get_us_time()
+	local inv = user:get_inventory()
+	local inv_list = inv:get_list('main')
+	local bow_name = itemstack:get_name()
+	local bow_def = x_bows.registered_bows[bow_name .. '_charged']
+	local itemstack_arrows = {}
 
-function rcbows.boom_effect(def, pos)
-	if def.effects.explosion and def.effects.explosion.mod then
-		local mod_name = def.effects.explosion.mod
-		if minetest.get_modpath(mod_name) ~= nil then
-			if mod_name == "tnt" then
-				tnt.boom(pos, {radius = def.effects.explosion.radius, damage_radius = def.effects.explosion.damage})
-			elseif mod_name == "explosions" then
-				explosions.explode(pos, {radius = def.effects.explosion.radius, strength = def.effects.explosion.damage})
-			end
+	if pointed_thing.under then
+		local node = minetest.get_node(pointed_thing.under)
+		local node_def = minetest.registered_nodes[node.name]
+
+		if node_def and node_def.on_rightclick then
+			node_def.on_rightclick(pointed_thing.under, node, user, itemstack, pointed_thing)
+			return
 		end
 	end
-end
 
-function rcbows.water_effect(def, pos)
-	if def.effects.water then
-		if def.effects.water.particles then
-			rcbows.splash(pos, "rcbows_water.png")
+	for k, st in ipairs(inv_list) do
+		if not st:is_empty() and x_bows.registered_arrows[st:get_name()] then
+			table.insert(itemstack_arrows, st)
 		end
-		local radius = def.effects.water.radius or 5
-		local flames = minetest.find_nodes_in_area({x=pos.x -radius, y=pos.y -radius, z=pos.z -radius}, {x=pos.x+radius, y=pos.y+radius, z=pos.z+radius}, {def.effects.water.flame_node})
-		if flames and #flames > 0 then
-			for i=1, #flames do
-				minetest.set_node(flames[i], {name="air"})
-				if def.effects.water.particles then
-					rcbows.splash(flames[i], "rcbows_water.png")
+	end
+
+	-- take 1st found arrow in the list
+	local itemstack_arrow = itemstack_arrows[1]
+
+	if itemstack_arrow and bow_def then
+		local _tool_capabilities = x_bows.registered_arrows[itemstack_arrow:get_name()].tool_capabilities
+
+		minetest.after(0, function(v_user, v_bow_name, v_time_load)
+			local wielded_item = v_user:get_wielded_item()
+			local wielded_item_name = wielded_item:get_name()
+
+			if wielded_item_name == v_bow_name then
+				local meta = wielded_item:get_meta()
+
+				meta:set_string('arrow', itemstack_arrow:get_name())
+				meta:set_string('time_load', tostring(v_time_load))
+				wielded_item:set_name(v_bow_name .. '_charged')
+				v_user:set_wielded_item(wielded_item)
+
+				if not x_bows.is_creative(user:get_player_name()) then
+					inv:remove_item('main', itemstack_arrow:get_name())
 				end
 			end
-		end
+		end, user, bow_name, time_load)
+
+		-- sound plays when charge time reaches full punch interval time
+		-- @TODO: find a way to prevent this from playing when not fully charged
+		minetest.after(_tool_capabilities.full_punch_interval, function(v_user, v_bow_name)
+			local wielded_item = v_user:get_wielded_item()
+			local wielded_item_name = wielded_item:get_name()
+
+			if wielded_item_name == v_bow_name .. '_charged' then
+				minetest.sound_play('x_bows_bow_loaded', {
+					to_player = user:get_player_name(),
+					gain = 0.6
+				})
+			end
+		end, user, bow_name)
+
+		minetest.sound_play('x_bows_bow_load', {
+			to_player = user:get_player_name(),
+			gain = 0.6
+		})
+
+		return itemstack
 	end
 end
 
---PARTICLES EFFECTS
+function x_bows.shoot(itemstack, user, pointed_thing)
+	local time_shoot = minetest.get_us_time();
+	local meta = itemstack:get_meta()
+	local meta_arrow = meta:get_string('arrow')
+	local time_load = tonumber(meta:get_string('time_load'))
+	local tflp = (time_shoot - time_load) / 1000000
 
-function rcbows.trail(old_pos, pos, trail_particle)
-	local texture, animation
-	if type(trail_particle) == 'table' then
-		texture = trail_particle.texture
-		animation = trail_particle.animation
-	else
-		texture = trail_particle
-		animation = ""
+	if not x_bows.registered_arrows[meta_arrow] then
+		return itemstack
 	end
-    minetest.add_particlespawner({
-        texture = texture,
-        amount = 20,
-        time = 0.2,
-        minpos = old_pos,
-        maxpos = pos,
-        --minvel = {x=1, y=0, z=1},
-        --maxvel = {x=1, y=0, z=1},
-        --minacc = {x=1, y=0, z=1},
-        --maxacc = {x=1, y=0, z=1},
-        minexptime = 0.2,
-        maxexptime = 0.5,
-        minsize = 0.5,
-        maxsize = 1.5,
-        collisiondetection = false,
-        vertical = false,
-        glow = 14,
-        animation = animation,
-    })
-end
 
-function rcbows.splash(old_pos, splash_particle)
-	minetest.add_particlespawner({
-		amount = 5,
-		time = 1,
-		minpos = old_pos,
-		maxpos = old_pos,
-		minvel = {x=1, y=1, z=0},
-		maxvel = {x=1, y=1, z=0},
-		minacc = {x=1, y=1, z=1},
-		maxacc = {x=1, y=1, z=1},
-		minexptime = 0.2,
-		maxexptime = 0.5,
-		minsize = 1,
-		maxsize = 1,
-		collisiondetection = false,
-		vertical = false,
-		texture = splash_particle,
-		playername = "singleplayer"
-	})
-end
+	local bow_name_charged = itemstack:get_name()
+	local bow_name = x_bows.registered_bows[bow_name_charged].name
+	local uses = x_bows.registered_bows[bow_name_charged].uses
+	local crit_chance = x_bows.registered_bows[bow_name_charged].crit_chance
+	local _tool_capabilities = x_bows.registered_arrows[meta_arrow].tool_capabilities
 
-rcbows.register_bow("rcbows:bow_wood", {
-	description = S("Wooden Bow"),
-	image = "rcbows_pulling_0.png",
-	strength = 30,
-	uses = 150,
-	charge_time = 0.5,
-	recipe = {
-		{"", "group:wood", "farming:string"},
-		{"group:wood", "", "farming:string"},
-		{"", "group:wood", "farming:string"},
-	},
-	base_texture = "rcbows_pulling_0.png",
-	overlay_empty = "rcbows_standby.png",
-	overlay_charged = "rcbows_pulling_2.png",
-	arrows = "rcbows:arrow",
-	sounds = {
-		max_hear_distance = 10,
-		gain = 0.4,
+	local staticdata = {
+		arrow = meta_arrow,
+		user_name = user:get_player_name(),
+		is_critical_hit = false,
+		_tool_capabilities = _tool_capabilities,
+		_tflp = tflp,
 	}
-})
 
-rcbows.register_arrow("rcbows:arrow", {
-	damage = 5,
-	inventory_arrow = {
-		name = "rcbows:inv_arrow",
-		description = S("Arrow"),
-		inventory_image = "rcbows_arrow.png"
-	},
-	sounds = {
-		max_hear_distance = 10,
-		gain = 0.4,
-	},
-})
+	-- crits, only on full punch interval
+	if crit_chance and crit_chance > 1 and tflp >= _tool_capabilities.full_punch_interval then
+		if math.random(1, crit_chance) == 1 then
+			staticdata.is_critical_hit = true
+		end
+	end
+
+	local sound_name = 'x_bows_bow_shoot'
+	if staticdata.is_critical_hit then
+		sound_name = 'x_bows_bow_shoot_crit'
+	end
+
+	meta:set_string('arrow', '')
+	itemstack:set_name(bow_name)
+
+	local pos = user:get_pos()
+	local dir = user:get_look_dir()
+	local obj = minetest.add_entity({x = pos.x, y = pos.y + 1.5, z = pos.z}, 'x_bows:arrow_entity', minetest.serialize(staticdata))
+
+	if not obj then
+		return itemstack
+	end
+
+	local lua_ent = obj:get_luaentity()
+	local strength_multiplier = tflp
+
+	if strength_multiplier > _tool_capabilities.full_punch_interval then
+		strength_multiplier = 1
+	end
+
+	local strength = 30 * strength_multiplier
+
+	obj:set_velocity(vector.multiply(dir, strength))
+	obj:set_acceleration({x = dir.x * -3, y = -10, z = dir.z * -3})
+	obj:set_yaw(minetest.dir_to_yaw(dir))
+
+	if not x_bows.is_creative(user:get_player_name()) then
+		itemstack:add_wear(65535 / uses)
+	end
+
+	minetest.sound_play(sound_name, {
+		gain = 0.3,
+		pos = user:get_pos(),
+		max_hear_distance = 10
+	})
+
+	return itemstack
+end
+
+function x_bows.particle_effect(pos, type)
+	if type == 'arrow' then
+		return minetest.add_particlespawner({
+			amount = 1,
+			time = 0.1,
+			minpos = pos,
+			maxpos = pos,
+			minexptime = 1,
+			maxexptime = 1,
+			minsize = 2,
+			maxsize = 2,
+			texture = 'x_bows_arrow_particle.png',
+			animation = {
+				type = 'vertical_frames',
+				aspect_w = 8,
+				aspect_h = 8,
+				length = 1,
+			},
+			glow = 1
+		})
+	elseif type == 'arrow_crit' then
+		return minetest.add_particlespawner({
+			amount = 3,
+			time = 0.1,
+			minpos = pos,
+			maxpos = pos,
+			minexptime = 0.5,
+			maxexptime = 0.5,
+			minsize = 2,
+			maxsize = 2,
+			texture = 'x_bows_arrow_particle.png^[colorize:#B22222:127',
+			animation = {
+				type = 'vertical_frames',
+				aspect_w = 8,
+				aspect_h = 8,
+				length = 1,
+			},
+			glow = 1
+		})
+	elseif type == 'bubble' then
+		return minetest.add_particlespawner({
+			amount = 1,
+			time = 1,
+			minpos = pos,
+			maxpos = pos,
+			minvel = {x=1, y=1, z=0},
+			maxvel = {x=1, y=1, z=0},
+			minacc = {x=1, y=1, z=1},
+			maxacc = {x=1, y=1, z=1},
+			minexptime = 0.2,
+			maxexptime = 0.5,
+			minsize = 0.5,
+			maxsize = 1,
+			texture = 'x_bows_bubble.png'
+		})
+	elseif type == 'arrow_tipped' then
+		return minetest.add_particlespawner({
+			amount = 5,
+			time = 1,
+			minpos = vector.subtract(pos, 0.5),
+			maxpos = vector.add(pos, 0.5),
+			minexptime = 0.4,
+			maxexptime = 0.8,
+			minvel = {x=-0.4, y=0.4, z=-0.4},
+			maxvel = {x=0.4, y=0.6, z=0.4},
+			minacc = {x=0.2, y=0.4, z=0.2},
+			maxacc = {x=0.4, y=0.6, z=0.4},
+			minsize = 4,
+			maxsize = 6,
+			texture = 'x_bows_arrow_tipped_particle.png^[colorize:#008000:127',
+			animation = {
+				type = 'vertical_frames',
+				aspect_w = 8,
+				aspect_h = 8,
+				length = 1,
+			},
+			glow = 1
+		})
+	end
+end
+
+-- sneak, fov adjustments when bow is charged
+minetest.register_globalstep(function(dtime)
+	bow_charged_timer = bow_charged_timer + dtime
+
+	if bow_charged_timer > 0.5 then
+		for _, player in ipairs(minetest.get_connected_players()) do
+			local name = player:get_player_name()
+			local stack = player:get_wielded_item()
+			local item = stack:get_name()
+
+			if not item then
+				return
+			end
+
+			if not x_bows.player_bow_sneak[name] then
+				x_bows.player_bow_sneak[name] = {}
+			end
+
+			if item == 'x_bows:bow_wood_charged' and not x_bows.player_bow_sneak[name].sneak then
+				if minetest.get_modpath('playerphysics') then
+					playerphysics.add_physics_factor(player, 'speed', 'x_bows:bow_wood_charged', 0.25)
+				end
+
+				x_bows.player_bow_sneak[name].sneak = true
+				player:set_fov(0.9, true, 0.4)
+			elseif item ~= 'x_bows:bow_wood_charged' and x_bows.player_bow_sneak[name].sneak then
+				if minetest.get_modpath('playerphysics') then
+					playerphysics.remove_physics_factor(player, 'speed', 'x_bows:bow_wood_charged')
+				end
+
+				x_bows.player_bow_sneak[name].sneak = false
+				player:set_fov(1, true, 0.4)
+			end
+		end
+
+		bow_charged_timer = 0
+	end
+end)
+
+local path = minetest.get_modpath('x_bows')
+
+dofile(path .. '/nodes.lua')
+dofile(path .. '/arrow.lua')
+dofile(path .. '/items.lua')
+
+local mod_end_time = (minetest.get_us_time() - mod_start_time) / 1000000
+
+print('[Mod] x_bows loaded.. ['.. mod_end_time ..'s]')
