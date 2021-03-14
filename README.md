@@ -6,7 +6,7 @@ Adds bow and arrows to Minetest.
 
 ## Features
 
-* bow will force you sneak when loaded
+* bow will force you sneak when loaded (optional dep. playerphysics)
 * loaded bow will slightly adjust the player FOV
 * bow uses minetest tool capabilities - if the bow is not loaded for long enough (time from last puch) the arrow will fly shorter range
 * arrow uses raycast
@@ -18,6 +18,7 @@ Adds bow and arrows to Minetest.
 * arrow continues to fly downwards when attached node is dug
 * arrow flies under water for short period of time and then sinks
 * arrows adjusts pitch when flying
+* arrows can be picked up again after stuck in solid nodes
 * registers only one entity reused for all arrows
 * (experimental) poison arrow - dealing damage for 5s but will not kill the target
 
@@ -27,16 +28,11 @@ Adds bow and arrows to Minetest.
 
 ## Optional Dependencies
 
-- farming
-  - bow and target recipes
-- 3d_armor
-  - calculates damage including the armor
-- hbhunger
-  - changes hudbar when poisoned
-- mesecons
-  - target can be used to trigger mesecon signal
-- playerphysics
-  - force sneak when holding charged bow
+- farming (bow and target recipes)
+- 3d_armor (calculates damage including the armor)
+- hbhunger (changes hudbar when poisoned)
+- mesecons (target can be used to trigger mesecon signal)
+- playerphysics (force sneak when holding charged bow)
 
 ## License:
 
