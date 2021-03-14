@@ -2,10 +2,24 @@
 
 Adds bow and arrows to Minetest.
 
-<!-- ![screenshot](screenshot.png) -->
+![screenshot](screenshot.png)
 
 ## Features
 
+* bow will force you sneak when loaded
+* loaded bow will slightly adjust the player FOV
+* bow uses minetest tool capabilities - if the bow is not loaded for long enough (time from last puch) the arrow will fly shorter range
+* arrow uses raycast
+* arrow has chance of critical shots/hits (only on full punch interval)
+* arrow uses minetest damage calculation (including 3d_armor) for making damage (no hardcoded values)
+* arrows stick to nodes, players and entitites
+* arrows remove them self from the world after some time
+* arrows remove them self if there are already too many arrows attached to node, player, entity
+* arrow continues to fly downwards when attached node is dug
+* arrow flies under water for short period of time and then sinks
+* arrows adjusts pitch when flying
+* registers only one entity reused for all arrows
+* (experimental) poison arrow - dealing damage for 5s but will not kill the target
 
 ## Dependencies
 
@@ -74,11 +88,13 @@ Modified by SaKeL:
 
 **Creative Commons License, robinhood76**, https://freesound.org
 
-- x_bows_bow_shoot.1.ogg
 - x_bows_arrow_hit.1.ogg
 - x_bows_arrow_hit.2.ogg
 - x_bows_arrow_hit.3.ogg
 
+**Creative Commons License, brendan89**, https://freesound.org
+
+- x_bows_bow_shoot.1.ogg
 
 **Creative Commons License, natty23**, https://freesound.org
 
