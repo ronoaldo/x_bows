@@ -23,6 +23,7 @@ Video: https://youtu.be/pItpltmUoa8
 * arrows can be picked up again after stuck in solid nodes
 * registers only one entity reused for all arrows
 * (experimental) poison arrow - dealing damage for 5s but will not kill the target
+* target block reduces fall damage by -30
 
 ## Dependencies
 

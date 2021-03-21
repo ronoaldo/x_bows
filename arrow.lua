@@ -310,7 +310,7 @@ minetest.register_entity('x_bows:arrow_entity', {
 					return
 				end
 
-				-- attach arrow
+				-- attach arrow prepare
 				local rotation = {x = 0, y = 0, z = 0}
 				local position = {x = 0, y = 0, z = 0}
 
@@ -382,24 +382,6 @@ minetest.register_entity('x_bows:arrow_entity', {
 					position.z = zmin / 10
 				end
 
-				self.object:set_attach(
-					pointed_thing.ref,
-					'',
-					position,
-					rotation,
-					true
-				)
-				self._attached = true
-				self._attached_to.type = pointed_thing.type
-				self._attached_to.pos = position
-
-				local children = pointed_thing.ref:get_children()
-
-				-- remove last arrow when too many already attached
-				if #children >= 5 then
-					children[1]:remove()
-				end
-
 				-- poison arrow
 				if self._poison_arrow then
 					local old_damage_texture_modifier = pointed_thing.ref:get_properties().damage_texture_modifier
@@ -426,6 +408,30 @@ minetest.register_entity('x_bows:arrow_entity', {
 							x_bows.poison_effect(1, 5, 0, self, pointed_thing.ref, old_damage_texture_modifier, punch_def)
 						-- end
 					end
+				end
+
+				if not x_bows.settings.x_bows_attach_arrows_to_entities and not pointed_thing.ref:is_player() then
+					self.object:remove()
+					return
+				end
+
+				-- attach arrow
+				self.object:set_attach(
+					pointed_thing.ref,
+					'',
+					position,
+					rotation,
+					true
+				)
+				self._attached = true
+				self._attached_to.type = pointed_thing.type
+				self._attached_to.pos = position
+
+				local children = pointed_thing.ref:get_children()
+
+				-- remove last arrow when too many already attached
+				if #children >= 5 then
+					children[1]:remove()
 				end
 
 				return

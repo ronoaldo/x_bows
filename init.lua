@@ -8,7 +8,10 @@ x_bows = {
 	hbhunger = minetest.get_modpath('hbhunger'),
 	registered_arrows = {},
 	registered_bows = {},
-	player_bow_sneak = {}
+	player_bow_sneak = {},
+	settings = {
+		x_bows_attach_arrows_to_entities = minetest.settings:get_bool("x_bows_attach_arrows_to_entities", false)
+	}
 }
 
 function x_bows.is_creative(name)
