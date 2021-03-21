@@ -4,6 +4,8 @@ Adds bow and arrows to Minetest.
 
 ![screenshot](screenshot.png)
 
+Video: https://youtu.be/pItpltmUoa8
+
 ## Features
 
 * bow will force you sneak when loaded (optional dep. playerphysics)
