@@ -31,6 +31,7 @@ Video: https://youtu.be/pItpltmUoa8
 
 ## Optional Dependencies
 
+- default (recipes)
 - farming (bow and target recipes)
 - 3d_armor (calculates damage including the armor)
 - hbhunger (changes hudbar when poisoned)
