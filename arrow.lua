@@ -136,6 +136,11 @@ minetest.register_entity('x_bows:arrow_entity', {
 	end,
 
 	on_death = function(self, killer)
+		if not self._old_pos then
+			self.object:remove()
+			return
+		end
+
 		minetest.item_drop(ItemStack(self.arrow), nil, vector.round(self._old_pos))
 	end,
 
