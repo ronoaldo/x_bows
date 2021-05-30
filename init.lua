@@ -97,8 +97,7 @@ function x_bows.load(itemstack, user, pointed_thing)
 		local node_def = minetest.registered_nodes[node.name]
 
 		if node_def and node_def.on_rightclick then
-			node_def.on_rightclick(pointed_thing.under, node, user, itemstack, pointed_thing)
-			return
+			return node_def.on_rightclick(pointed_thing.under, node, user, itemstack, pointed_thing)
 		end
 	end
 
