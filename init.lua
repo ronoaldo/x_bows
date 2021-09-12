@@ -340,7 +340,7 @@ minetest.register_globalstep(function(dtime)
 				end
 
 				x_bows.player_bow_sneak[name].sneak = false
-				player:set_fov(1, true, 0.4)
+				player:set_fov(0, true, 0.4)
 			end
 		end
 
